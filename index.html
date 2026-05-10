@@ -671,7 +671,6 @@ async function uploadToCloudinary(file) {
   formData.append('file', file);
   formData.append('upload_preset', CLOUDINARY_PRESET);
   formData.append('folder', 'soumissions');
-  formData.append('transformation', 'f_auto,q_auto');
 
   const resp = await fetch(
     `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`,
