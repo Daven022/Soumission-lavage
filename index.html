@@ -449,7 +449,19 @@ body { font-family: 'Inter', sans-serif; background: var(--gris-bg); min-height:
 
         <div class="preview-grid" id="preview-grid"></div>
         <div id="photo-count" class="photo-count"></div>
-        <div id="photo-err" style="display:none; color:#d63031; font-size:13px; font-weight:600; margin-top:10px; text-align:center;">⚠️ Des photos sont requises pour produire une soumission. Veuillez en ajouter au moins une.</div>
+        <div id="photo-err" style="display:none; color:#d63031; font-size:13px; font-weight:600; margin-top:10px; text-align:center;">⚠️ Des photos sont requises. Cochez la case ci-dessous si vous ne pouvez pas en ajouter.</div>
+
+        <!-- CASE SANS PHOTOS -->
+        <div class="srv-wrap" id="wrap-sans-photos" style="margin-top:14px;">
+          <div class="srv-row" onclick="toggleSansPhotos()">
+            <div class="chk-box" id="cb-sans-photos"></div>
+            <span class="srv-lbl" style="font-size:13px;">Je n'arrive pas à ajouter mes photos — je vais les envoyer par courriel ou texto</span>
+          </div>
+          <div class="srv-note-area" id="na-sans-photos" style="display:none;">
+            <label>Envoyez vos photos à :</label>
+            <p style="font-size:13px; color:#1a6635; margin-top:4px;">📧 info@appalachesmultiservices.com<br>📱 <a href="tel:5818025354" style="color:#1ca262; font-weight:700;">581 802-5354</a> (texto)<br><br>Mentionnez votre nom pour qu'on puisse associer les photos à votre demande.</p>
+          </div>
+        </div>
 
         <div class="btn-row">
           <button class="btn btn-sec" onclick="goP1()">← Retour</button>
@@ -483,13 +495,11 @@ body { font-family: 'Inter', sans-serif; background: var(--gris-bg); min-height:
 <div class="overlay" id="overlay">
   <div class="overlay-box">
     <div class="spin"></div>
-    <p>Envoi en cours…</p>
+    <p id="overlay-msg">Upload des photos en cours…</p>
   </div>
 </div>
 
 <script>
-const WEBHOOK = 'https://hook.us2.make.com/id1ougllnjhy52sq4j21a9k18di6ahz3';
-
 const SRV_RES = [
   { id:'maison',   lbl:'Nettoyage de la maison (murs extérieurs)' },
   { id:'garage',   lbl:'Nettoyage du garage' },
@@ -618,12 +628,23 @@ function selectProb(p) {
 }
 
 /* PHOTOS */
+const CLOUDINARY_CLOUD = 'dwzvsbqoe';
+const CLOUDINARY_PRESET = 'soumission-lavage';
+const WEBHOOK = 'https://hook.us2.make.com/id1ougllnjhy52sq4j21a9k18di6ahz3';
 let photos = [];
+let uploadedUrls = [];
+
 function addFiles(files) {
-  Array.from(files).forEach(f => photos.push(f));
+  Array.from(files).forEach(f => {
+    if (photos.length >= 20) { alert('Maximum 20 photos.'); return; }
+    if (f.size > 10 * 1024 * 1024) { alert(`${f.name} dépasse 10MB — prenez une photo moins lourde.`); return; }
+    if (!f.type.startsWith('image/')) { alert(`${f.name} n'est pas une image valide.`); return; }
+    photos.push(f);
+  });
   renderPreviews();
   document.getElementById('file-in').value = '';
 }
+
 function renderPreviews() {
   const grid = document.getElementById('preview-grid');
   const cnt  = document.getElementById('photo-count');
@@ -638,12 +659,31 @@ function renderPreviews() {
   });
   if (photos.length > 0) {
     cnt.innerHTML = `<span style="color:#1ca262; font-weight:700;">✓ ${photos.length} photo${photos.length > 1 ? 's' : ''} ajoutée${photos.length > 1 ? 's' : ''}</span>`;
-    err.style.display = 'none';
+    if (err) err.style.display = 'none';
   } else {
     cnt.innerHTML = '';
   }
 }
 function rmPhoto(i) { photos.splice(i, 1); renderPreviews(); }
+
+async function uploadToCloudinary(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('upload_preset', CLOUDINARY_PRESET);
+  formData.append('folder', 'soumissions');
+  formData.append('transformation', 'f_auto,q_auto');
+
+  const resp = await fetch(
+    `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`,
+    { method: 'POST', body: formData }
+  );
+  const data = await resp.json();
+  if (!resp.ok || !data.secure_url) {
+    console.error('Cloudinary error:', data);
+    throw new Error(data.error?.message || 'Erreur upload photo');
+  }
+  return data.secure_url;
+}
 
 /* VALIDATION */
 function valP1() {
@@ -709,15 +749,41 @@ function collectEau() {
 
 const URG = { rapide:'Dès que possible', plus:'Plus tard', '':'Non précisé' };
 
+let sansPhotos = false;
+function toggleSansPhotos() {
+  sansPhotos = !sansPhotos;
+  document.getElementById('wrap-sans-photos').classList.toggle('on', sansPhotos);
+  document.getElementById('na-sans-photos').style.display = sansPhotos ? 'block' : 'none';
+  if (sansPhotos) document.getElementById('photo-err').style.display = 'none';
+}
+
 /* ENVOYER */
 async function envoyer() {
-  if (photos.length === 0) {
+  if (photos.length === 0 && !sansPhotos) {
     document.getElementById('photo-err').style.display = 'block';
     window.scrollTo({top: document.getElementById('photo-err').offsetTop - 20, behavior:'smooth'});
     return;
   }
+
   document.getElementById('btn-send').disabled = true;
   document.getElementById('overlay').classList.add('show');
+
+  // Upload séquentiel — plus stable sur mobile LTE
+  uploadedUrls = [];
+  try {
+    for (let i = 0; i < photos.length; i++) {
+      document.getElementById('overlay-msg').textContent = `Upload photo ${i+1} sur ${photos.length}…`;
+      const url = await uploadToCloudinary(photos[i]);
+      uploadedUrls.push(url);
+    }
+  } catch(e) {
+    document.getElementById('overlay').classList.remove('show');
+    document.getElementById('btn-send').disabled = false;
+    alert('Une photo n\'a pas pu être téléchargée. Vérifiez votre connexion et réessayez.');
+    return;
+  }
+
+  document.getElementById('overlay-msg').textContent = 'Envoi de la demande…';
 
   const prenom  = document.getElementById('prenom').value.trim();
   const nom     = document.getElementById('nom').value.trim();
@@ -725,7 +791,6 @@ async function envoyer() {
   const tel     = document.getElementById('tel').value.trim();
   const adresse = document.getElementById('adresse').value.trim();
   const message = document.getElementById('message').value.trim();
-  const photosB64 = await Promise.all(photos.map(f => toB64(f)));
 
   const payload = {
     prenom, nom, nom_complet: prenom + ' ' + nom,
@@ -733,33 +798,35 @@ async function envoyer() {
     type_chantier: [...typeOn].join(' + '),
     services: collectSrv().join(' | '),
     source_eau: collectEau(),
-    derniere_fois_nettoye: { jamais:'Jamais', '3ans':'0 à 3 ans', plus3:'3 ans et plus', sais:'Je ne sais pas', '':'Non précisé' }[nettSel],
-    robinet_exterieur: robinetSel === 'oui' ? 'Oui' : robinetSel === 'non' ? 'Non — ' + (continuerSel === 'oui' ? 'souhaite continuer quand même' : 'annulé') : 'Non précisé',
+    robinet_exterieur: robinetSel === 'oui' ? 'Oui' : robinetSel === 'non' ? 'Non — ' + (continuerSel === 'oui' ? 'souhaite obtenir information' : 'annulé') : 'Non précisé',
     urgence: URG[urgSel],
     message,
-    nombre_photos: photos.length,
-    photos_base64: photosB64,
+    nombre_photos: uploadedUrls.length,
+    photos_urls: uploadedUrls,
+    photos_a_envoyer_separement: sansPhotos ? 'Oui — client va envoyer par courriel/texto' : 'Non',
     source: 'Formulaire soumission web',
     date_soumission: new Date().toLocaleString('fr-CA'),
   };
 
   try {
-    await fetch(WEBHOOK, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
-  } catch(e) {}
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    await fetch(WEBHOOK, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+  } catch(e) {
+    console.log('Webhook error:', e);
+  }
 
   document.getElementById('overlay').classList.remove('show');
   document.getElementById('pg2').classList.add('hidden');
   document.getElementById('pg-ok').classList.remove('hidden');
   document.getElementById('ok-prenom').textContent = prenom;
   window.scrollTo({top:0,behavior:'smooth'});
-}
-
-function toB64(file) {
-  return new Promise(res => {
-    const r = new FileReader();
-    r.onload = e => res(e.target.result.split(',')[1]);
-    r.readAsDataURL(file);
-  });
 }
 </script>
 </body>
