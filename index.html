@@ -637,7 +637,7 @@ let uploadedUrls = [];
 function addFiles(files) {
   Array.from(files).forEach(f => {
     if (photos.length >= 20) { alert('Maximum 20 photos.'); return; }
-    if (f.size > 10 * 1024 * 1024) { alert(`${f.name} dépasse 10MB — prenez une photo moins lourde.`); return; }
+    if (f.size > 50 * 1024 * 1024) { alert(`${f.name} dépasse 50MB — prenez une photo moins lourde.`); return; }
     if (!f.type.startsWith('image/')) { alert(`${f.name} n'est pas une image valide.`); return; }
     photos.push(f);
   });
