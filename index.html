@@ -488,7 +488,7 @@ body { font-family: 'Inter', sans-serif; background: var(--gris-bg); min-height:
 </div>
 
 <script>
-const WEBHOOK = 'https://services.leadconnectorhq.com/hooks/xdWlqtzW6dsc8p5E9LKM/webhook-trigger/e8c14fcc-b14b-43d5-b0de-a19221d8023f';
+const WEBHOOK = 'https://hook.us2.make.com/id1ougllnjhy52sq4j21a9k18di6ahz3';
 
 const SRV_RES = [
   { id:'maison',   lbl:'Nettoyage de la maison (murs extérieurs)' },
@@ -744,7 +744,7 @@ async function envoyer() {
   };
 
   try {
-    await fetch(WEBHOOK, { method:'POST', headers:{'Content-Type':'application/json'}, mode:'no-cors', body:JSON.stringify(payload) });
+    await fetch(WEBHOOK, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
   } catch(e) {}
 
   document.getElementById('overlay').classList.remove('show');
